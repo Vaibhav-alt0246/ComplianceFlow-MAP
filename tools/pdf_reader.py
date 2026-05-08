@@ -20,7 +20,7 @@ def read_pdf_circular(file_path: str) -> str:
         file_path: Path to the PDF file to read.
 
     Returns:
-        Extracted text from all pages as a single string.
+        Extracted text from all pages as a single string, or error message if parsing fails.
 
     Raises:
         FileNotFoundError: If the file is not found.
@@ -28,15 +28,18 @@ def read_pdf_circular(file_path: str) -> str:
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"PDF not found: {file_path}")
 
-    reader = PdfReader(file_path)
-    text_parts = []
+    try:
+        reader = PdfReader(file_path)
+        text_parts = []
 
-    for page in reader.pages:
-        text = page.extract_text()
-        if text:
-            text_parts.append(text)
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                text_parts.append(text)
 
-    return "\n\n".join(text_parts)
+        return "\n\n".join(text_parts)
+    except Exception as e:
+        return f"ERROR: Could not parse PDF text - {str(e)}"
 
 
 @tool
@@ -49,7 +52,7 @@ def read_pdf_with_paragraphs(file_path: str) -> str:
 
     Returns:
         Extracted text from all pages as a single concatenated string,
-        with paragraph structure preserved.
+        with paragraph structure preserved, or error message if parsing fails.
 
     Raises:
         FileNotFoundError: If the file is not found.
@@ -57,15 +60,18 @@ def read_pdf_with_paragraphs(file_path: str) -> str:
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"PDF not found: {file_path}")
 
-    text_parts = []
+    try:
+        text_parts = []
 
-    with pdfplumber.open(file_path) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text()
-            if text:
-                text_parts.append(text)
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    text_parts.append(text)
 
-    return "\n\n".join(text_parts)
+        return "\n\n".join(text_parts)
+    except Exception as e:
+        return f"ERROR: Could not parse PDF text - {str(e)}"
 
 
 def extract_text_from_pdf(pdf_path: str) -> str:
@@ -76,15 +82,18 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
-    reader = PdfReader(pdf_path)
-    text_parts = []
+    try:
+        reader = PdfReader(pdf_path)
+        text_parts = []
 
-    for page in reader.pages:
-        text = page.extract_text()
-        if text:
-            text_parts.append(text)
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                text_parts.append(text)
 
-    return "\n\n".join(text_parts)
+        return "\n\n".join(text_parts)
+    except Exception as e:
+        return f"ERROR: Could not parse PDF text - {str(e)}"
 
 
 def extract_text_with_page_numbers(pdf_path: str) -> list[dict]:
@@ -95,15 +104,18 @@ def extract_text_with_page_numbers(pdf_path: str) -> list[dict]:
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
-    reader = PdfReader(pdf_path)
-    pages_data = []
+    try:
+        reader = PdfReader(pdf_path)
+        pages_data = []
 
-    for page_num, page in enumerate(reader.pages, start=1):
-        text = page.extract_text()
-        if text:
-            pages_data.append({"page": page_num, "text": text})
+        for page_num, page in enumerate(reader.pages, start=1):
+            text = page.extract_text()
+            if text:
+                pages_data.append({"page": page_num, "text": text})
 
-    return pages_data
+        return pages_data
+    except Exception as e:
+        return [{"page": 0, "text": f"ERROR: Could not parse PDF text - {str(e)}"}]
 
 
 def get_pdf_metadata(pdf_path: str) -> dict:
@@ -113,13 +125,23 @@ def get_pdf_metadata(pdf_path: str) -> dict:
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
-    reader = PdfReader(pdf_path)
-    metadata = reader.metadata or {}
+    try:
+        reader = PdfReader(pdf_path)
+        metadata = reader.metadata or {}
 
-    return {
-        "author": metadata.get("/Author", ""),
-        "title": metadata.get("/Title", ""),
-        "creator": metadata.get("/Creator", ""),
-        "producer": metadata.get("/Producer", ""),
-        "page_count": len(reader.pages),
-    }
+        return {
+            "author": metadata.get("/Author", ""),
+            "title": metadata.get("/Title", ""),
+            "creator": metadata.get("/Creator", ""),
+            "producer": metadata.get("/Producer", ""),
+            "page_count": len(reader.pages),
+        }
+    except Exception as e:
+        return {
+            "author": "",
+            "title": "",
+            "creator": "",
+            "producer": "",
+            "page_count": 0,
+            "error": f"ERROR: Could not parse PDF metadata - {str(e)}",
+        }

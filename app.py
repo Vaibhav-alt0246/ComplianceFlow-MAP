@@ -33,6 +33,8 @@ with st.sidebar:
     if st.button("Run Agentic Swarm", type="primary", use_container_width=True):
         if not st.session_state.uploaded_file:
             st.error("Please upload a PDF first.")
+        elif not st.session_state.uploaded_file.name.lower().endswith('.pdf'):
+            st.error("Please upload a valid PDF.")
         else:
             # Save uploaded file to disk
             pdf_path = f"data_assets/{st.session_state.uploaded_file.name}"

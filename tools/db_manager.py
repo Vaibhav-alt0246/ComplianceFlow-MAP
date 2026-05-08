@@ -41,34 +41,41 @@ def create_compliance_ticket(
     db_path = TICKET_DB_PATH
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS tickets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            task TEXT NOT NULL,
-            department TEXT NOT NULL,
-            explainability_trigger TEXT NOT NULL,
-            confidence_score TEXT NOT NULL,
-            timestamp TEXT NOT NULL
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tickets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task TEXT NOT NULL,
+                department TEXT NOT NULL,
+                explainability_trigger TEXT NOT NULL,
+                confidence_score TEXT NOT NULL,
+                timestamp TEXT NOT NULL
+            )
+        """)
+
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        cursor.execute(
+            """
+            INSERT INTO tickets (task, department, explainability_trigger, confidence_score, timestamp)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (task, department, explainability_trigger, confidence_score, timestamp),
         )
-    """)
 
-    timestamp = datetime.now(timezone.utc).isoformat()
-
-    cursor.execute(
-        """
-        INSERT INTO tickets (task, department, explainability_trigger, confidence_score, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (task, department, explainability_trigger, confidence_score, timestamp),
-    )
-
-    conn.commit()
-    conn.close()
-
-    return f"Success: Ticket '{task}' created and inserted into database."
+        conn.commit()
+        return f"Success: Ticket '{task}' created and inserted into database."
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return f"ERROR: Failed to create ticket - {str(e)}"
+    finally:
+        if conn:
+            conn.close()
 
 
 DB_PATH = "compliance_tickets.db"
@@ -86,49 +93,57 @@ def init_db():
     Initialize the database with the schema required by the IT Dispatcher task.
     Creates two tables: it_tickets and audit_trail.
     """
-    conn = get_connection()
-    cursor = conn.cursor()
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS it_tickets (
-            ticket_id TEXT PRIMARY KEY,
-            map_id TEXT NOT NULL,
-            action_title TEXT NOT NULL,
-            action_description TEXT NOT NULL,
-            target_department TEXT NOT NULL,
-            priority TEXT NOT NULL,
-            deadline TEXT,
-            success_criteria TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'OPEN',
-            created_at TEXT NOT NULL,
-            created_by TEXT NOT NULL
-        )
-    """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS it_tickets (
+                ticket_id TEXT PRIMARY KEY,
+                map_id TEXT NOT NULL,
+                action_title TEXT NOT NULL,
+                action_description TEXT NOT NULL,
+                target_department TEXT NOT NULL,
+                priority TEXT NOT NULL,
+                deadline TEXT,
+                success_criteria TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'OPEN',
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL
+            )
+        """)
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS audit_trail (
-            audit_id TEXT PRIMARY KEY,
-            ticket_id TEXT NOT NULL,
-            map_id TEXT NOT NULL,
-            clause_id TEXT NOT NULL,
-            source_document TEXT NOT NULL,
-            source_page INTEGER NOT NULL,
-            source_section TEXT NOT NULL,
-            verbatim_clause TEXT NOT NULL,
-            auditor_verdict TEXT NOT NULL,
-            auditor_confidence REAL NOT NULL,
-            approver_name TEXT NOT NULL,
-            approver_role TEXT NOT NULL,
-            approval_timestamp TEXT NOT NULL,
-            execution_timestamp TEXT NOT NULL,
-            pipeline_version TEXT NOT NULL,
-            immutable_flag INTEGER NOT NULL DEFAULT 1,
-            FOREIGN KEY (ticket_id) REFERENCES it_tickets(ticket_id)
-        )
-    """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS audit_trail (
+                audit_id TEXT PRIMARY KEY,
+                ticket_id TEXT NOT NULL,
+                map_id TEXT NOT NULL,
+                clause_id TEXT NOT NULL,
+                source_document TEXT NOT NULL,
+                source_page INTEGER NOT NULL,
+                source_section TEXT NOT NULL,
+                verbatim_clause TEXT NOT NULL,
+                auditor_verdict TEXT NOT NULL,
+                auditor_confidence REAL NOT NULL,
+                approver_name TEXT NOT NULL,
+                approver_role TEXT NOT NULL,
+                approval_timestamp TEXT NOT NULL,
+                execution_timestamp TEXT NOT NULL,
+                pipeline_version TEXT NOT NULL,
+                immutable_flag INTEGER NOT NULL DEFAULT 1,
+                FOREIGN KEY (ticket_id) REFERENCES it_tickets(ticket_id)
+            )
+        """)
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
 
 
 def insert_ticket(
@@ -148,34 +163,42 @@ def insert_ticket(
     ticket_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        INSERT INTO it_tickets
-        (ticket_id, map_id, action_title, action_description, target_department,
-         priority, deadline, success_criteria, status, created_at, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            ticket_id,
-            map_id,
-            action_title,
-            action_description,
-            target_department,
-            priority,
-            deadline,
-            success_criteria,
-            status,
-            created_at,
-            created_by,
-        ),
-    )
+        cursor.execute(
+            """
+            INSERT INTO it_tickets
+            (ticket_id, map_id, action_title, action_description, target_department,
+             priority, deadline, success_criteria, status, created_at, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ticket_id,
+                map_id,
+                action_title,
+                action_description,
+                target_department,
+                priority,
+                deadline,
+                success_criteria,
+                status,
+                created_at,
+                created_by,
+            ),
+        )
 
-    conn.commit()
-    conn.close()
-    return ticket_id
+        conn.commit()
+        return ticket_id
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
 
 
 def insert_audit_trail_entry(
@@ -199,65 +222,81 @@ def insert_audit_trail_entry(
     audit_id = str(uuid.uuid4())
     execution_timestamp = datetime.now(timezone.utc).isoformat()
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        INSERT INTO audit_trail
-        (audit_id, ticket_id, map_id, clause_id, source_document, source_page,
-         source_section, verbatim_clause, auditor_verdict, auditor_confidence,
-         approver_name, approver_role, approval_timestamp, execution_timestamp,
-         pipeline_version, immutable_flag)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            audit_id,
-            ticket_id,
-            map_id,
-            clause_id,
-            source_document,
-            source_page,
-            source_section,
-            verbatim_clause,
-            auditor_verdict,
-            auditor_confidence,
-            approver_name,
-            approver_role,
-            approval_timestamp,
-            execution_timestamp,
-            pipeline_version,
-            1,  # immutable_flag
-        ),
-    )
+        cursor.execute(
+            """
+            INSERT INTO audit_trail
+            (audit_id, ticket_id, map_id, clause_id, source_document, source_page,
+             source_section, verbatim_clause, auditor_verdict, auditor_confidence,
+             approver_name, approver_role, approval_timestamp, execution_timestamp,
+             pipeline_version, immutable_flag)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                audit_id,
+                ticket_id,
+                map_id,
+                clause_id,
+                source_document,
+                source_page,
+                source_section,
+                verbatim_clause,
+                auditor_verdict,
+                auditor_confidence,
+                approver_name,
+                approver_role,
+                approval_timestamp,
+                execution_timestamp,
+                pipeline_version,
+                1,  # immutable_flag
+            ),
+        )
 
-    conn.commit()
-    conn.close()
-    return audit_id
+        conn.commit()
+        return audit_id
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
 
 
 def get_ticket(ticket_id: str) -> Optional[Dict[str, Any]]:
     """Retrieve a ticket by ID."""
-    conn = get_connection()
-    cursor = conn.cursor()
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM it_tickets WHERE ticket_id = ?", (ticket_id,))
-    row = cursor.fetchone()
-    conn.close()
+        cursor.execute("SELECT * FROM it_tickets WHERE ticket_id = ?", (ticket_id,))
+        row = cursor.fetchone()
 
-    return dict(row) if row else None
+        return dict(row) if row else None
+    finally:
+        if conn:
+            conn.close()
 
 
 def get_all_tickets() -> List[Dict[str, Any]]:
     """Retrieve all tickets."""
-    conn = get_connection()
-    cursor = conn.cursor()
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM it_tickets ORDER BY created_at DESC")
-    rows = cursor.fetchall()
-    conn.close()
+        cursor.execute("SELECT * FROM it_tickets ORDER BY created_at DESC")
+        rows = cursor.fetchall()
 
-    return [dict(row) for row in rows]
+        return [dict(row) for row in rows]
+    finally:
+        if conn:
+            conn.close()
 
 
 def get_audit_trail(ticket_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -265,21 +304,25 @@ def get_audit_trail(ticket_id: Optional[str] = None) -> List[Dict[str, Any]]:
     Retrieve audit trail entries. If ticket_id is provided, filter by that ticket.
     Otherwise return all entries ordered by execution_timestamp DESC.
     """
-    conn = get_connection()
-    cursor = conn.cursor()
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
 
-    if ticket_id:
-        cursor.execute(
-            "SELECT * FROM audit_trail WHERE ticket_id = ? ORDER BY execution_timestamp DESC",
-            (ticket_id,),
-        )
-    else:
-        cursor.execute("SELECT * FROM audit_trail ORDER BY execution_timestamp DESC")
+        if ticket_id:
+            cursor.execute(
+                "SELECT * FROM audit_trail WHERE ticket_id = ? ORDER BY execution_timestamp DESC",
+                (ticket_id,),
+            )
+        else:
+            cursor.execute("SELECT * FROM audit_trail ORDER BY execution_timestamp DESC")
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
-    return [dict(row) for row in rows]
+        return [dict(row) for row in rows]
+    finally:
+        if conn:
+            conn.close()
 
 
 def generate_audit_report(ticket_ids: List[str]) -> str:
