@@ -1,0 +1,310 @@
+# =============================================================================
+# Multi-Agent Regulatory Compliance System — Task Definitions
+# CrewAI tasks.yaml
+#
+# Design principles:
+#   - Each task has an explicit `expected_output` schema. This is not
+#     documentation — CrewAI uses it to validate agent output structure.
+#   - The `context` field creates the data dependency chain (DAG).
+#   - The Auditor task's output_pydantic field (set in crew.py) enforces
+#     the APPROVE/REVISE verdict as a typed enum, enabling deterministic
+#     loop-back logic without relying on LLM free-text parsing.
+#   - Task 4 (HITL) is a PLACEHOLDER task. In crew.py, execution halts
+#     after task 3 and resumes only when the Streamlit UI posts an approval
+#     event. This task documents the contract between the AI pipeline and
+#     the human interface.
+# =============================================================================
+
+extract_regulatory_clauses:
+  description: >
+    Analyse the uploaded regulatory PDF document: {document_path}
+
+    Perform a complete, page-by-page extraction of every clause that imposes
+    an obligation, prohibition, deadline, or reporting requirement on a
+    financial institution.
+
+    For each clause, produce a structured record containing:
+      - clause_id: Sequential identifier (e.g., "C-001", "C-002")
+      - verbatim_text: The exact clause text, no paraphrasing
+      - source_page: Page number in the PDF
+      - source_section: Section heading or article number
+      - document_name: Name of the uploaded document
+      - urgency_tier: One of [CRITICAL, HIGH, MEDIUM, LOW] — derived from
+        regulatory language ("shall" = CRITICAL/HIGH, "should" = MEDIUM,
+        "may" = LOW)
+      - effective_date: Compliance deadline if stated; null if not specified
+      - clause_type: One of [OBLIGATION, PROHIBITION, REPORTING, DEFINITION,
+        GUIDANCE]
+
+    Do not summarise or interpret clauses. If a clause is ambiguous, include
+    it with a flag ambiguity_note explaining what is unclear.
+    Do not invent clauses. If a section contains no actionable obligation,
+    note it as a non-actionable section and move on.
+
+  expected_output: >
+    A valid JSON array of clause objects, each conforming to the schema:
+    {
+      "clause_id": "C-001",
+      "verbatim_text": "<exact text>",
+      "source_page": 12,
+      "source_section": "Article 4.3 — Data Retention",
+      "document_name": "CBUAE Circular 2024/07",
+      "urgency_tier": "CRITICAL",
+      "effective_date": "2025-01-01",
+      "clause_type": "OBLIGATION",
+      "ambiguity_note": null
+    }
+    The array must be wrapped in a root key "clauses". Minimum one clause.
+    No markdown fences. Pure JSON only.
+
+  agent: regulatory_analyst
+
+# -----------------------------------------------------------------------------
+
+generate_action_points:
+  description: >
+    Using the clause inventory from the extraction task, convert each clause
+    into a Measurable Action Point (MAP).
+
+    For each clause, produce exactly one MAP record containing:
+      - map_id: Sequential identifier (e.g., "MAP-001")
+      - clause_id: The source clause_id this MAP derives from
+      - action_title: A concise title (max 10 words), starting with an
+        imperative verb (e.g., "Implement", "Deploy", "Establish", "Revise")
+      - action_description: A precise description of the single deliverable
+        or control required. Max 3 sentences. No vague verbs.
+      - target_department: One of [IT_SECURITY, DATA_GOVERNANCE, RISK_MGMT,
+        OPERATIONS, LEGAL_COMPLIANCE, FINANCE, HR, INTERNAL_AUDIT]
+      - priority: Inherited from clause urgency_tier
+      - deadline: ISO 8601 date derived from effective_date, or null
+      - success_criteria: A measurable, binary test of completion
+        (e.g., "Audit log retention system passes external penetration test")
+      - explainability:
+          verbatim_clause: "<exact clause text>"
+          source_document: "<document name>"
+          source_page: <int>
+          source_section: "<section>"
+          reasoning: >
+            One sentence explaining why this specific action fulfils
+            the cited clause's requirement.
+
+    Rules:
+      - One MAP per clause. Never merge clauses.
+      - If a clause is ambiguous, set action_title to "REQUIRES HUMAN
+        REVIEW" and populate explainability fully. Do not fabricate an action.
+      - Never reference a clause that was not in the input.
+
+  expected_output: >
+    A valid JSON object with root key "maps" containing an array of MAP
+    objects conforming to the schema above. One MAP per input clause.
+    No markdown fences. Pure JSON only.
+
+  agent: map_architect
+  context:
+    - extract_regulatory_clauses
+
+# -----------------------------------------------------------------------------
+
+audit_action_points:
+  description: >
+    Independently audit each MAP in the input set against the bank's existing
+    policy knowledge base (ChromaDB RAG). Issue a structured verdict for every
+    MAP.
+
+    For each MAP, your audit process must:
+      1. EXPLAINABILITY CHECK: Verify the verbatim_clause in the MAP's
+         explainability block matches the actual clause text from the
+         extraction task. Flag any discrepancy as HALLUCINATION.
+      2. POLICY CONTRADICTION CHECK: Query the ChromaDB knowledge base for
+         existing policies related to the MAP's topic and target department.
+         If the MAP's required action directly contradicts an existing,
+         in-force policy, flag as CONTRADICTION and cite the policy name
+         and section.
+      3. DUPLICATION CHECK: If an identical or substantially similar control
+         already exists in bank policy and the MAP adds no new requirement,
+         flag as DUPLICATE.
+      4. DEPARTMENT ASSIGNMENT CHECK: Verify the assigned department has
+         ownership of the described control domain.
+
+    For each MAP, produce an audit_record containing:
+      - map_id: The MAP being reviewed
+      - verdict: One of [APPROVE, REVISE]
+      - confidence_score: Float 0.0–1.0 representing RAG retrieval confidence
+      - issues: List of issue objects (empty list if APPROVE):
+          - issue_type: [HALLUCINATION, CONTRADICTION, DUPLICATE, WRONG_DEPT]
+          - description: Specific description of the problem
+          - policy_reference: The existing policy name/section that conflicts
+            (null if not applicable)
+          - required_change: Exact change the MAP Architect must make
+
+    Verdict rules:
+      - APPROVE if and only if all four checks pass.
+      - REVISE if any check fails. Provide at least one issue object.
+      - Do not approve a MAP with a confidence_score below 0.4 — escalate
+        to human review by setting verdict to REVISE with issue_type AMBIGUOUS.
+
+  expected_output: >
+    A valid JSON object with root key "audit_results" containing:
+    {
+      "audit_results": [
+        {
+          "map_id": "MAP-001",
+          "verdict": "APPROVE",
+          "confidence_score": 0.92,
+          "issues": []
+        },
+        {
+          "map_id": "MAP-002",
+          "verdict": "REVISE",
+          "confidence_score": 0.78,
+          "issues": [
+            {
+              "issue_type": "CONTRADICTION",
+              "description": "MAP requires 7-year log retention but Policy IT-SEC-04 mandates 5 years for this data class.",
+              "policy_reference": "IT-SEC-04 Section 3.2",
+              "required_change": "Revise retention period to align with IT-SEC-04 or flag for policy amendment."
+            }
+          ]
+        }
+      ],
+      "total_maps": 2,
+      "approved_count": 1,
+      "revision_count": 1,
+      "audit_timestamp": "<ISO 8601 datetime>"
+    }
+    No markdown fences. Pure JSON only.
+
+  agent: internal_auditor
+  context:
+    - extract_regulatory_clauses
+    - generate_action_points
+
+# -----------------------------------------------------------------------------
+# HITL GATE — This task is a contract definition, not an executable task.
+# In crew.py: after audit_action_points completes, execution halts.
+# The Streamlit dashboard reads the approved MAPs and audit results.
+# Resume signal: Streamlit posts approval_event to a threading.Event or
+# FastAPI webhook. The IT Dispatcher task is then triggered programmatically.
+# See crew.py for the HITL gate implementation pattern.
+# -----------------------------------------------------------------------------
+
+human_approval_gate:
+  description: >
+    SYSTEM PAUSE — Human-in-the-Loop Gate.
+
+    This task represents the mandatory human review checkpoint. The AI
+    pipeline halts at this point. The Streamlit compliance dashboard
+    displays the following to the human officer:
+      - All MAPs with APPROVE verdict from the auditor
+      - Full explainability block for each MAP (clause trace)
+      - Audit confidence scores
+      - Any REVISE verdicts and their reasoning (for transparency)
+
+    The human compliance officer must:
+      1. Review each approved MAP and its clause justification
+      2. Accept or override the AI audit verdict
+      3. Click "Approve & Dispatch" to authorise execution, OR
+         "Reject" to return the entire batch for re-analysis
+
+    This task resolves only when the Streamlit UI posts a signed approval
+    event containing: approver_name, approver_role, approval_timestamp,
+    and approved_map_ids list.
+
+    No automated agent may skip or simulate this gate.
+
+  expected_output: >
+    A valid JSON approval event object:
+    {
+      "approval_event": {
+        "approver_name": "<string>",
+        "approver_role": "<string>",
+        "approval_timestamp": "<ISO 8601>",
+        "approved_map_ids": ["MAP-001", "MAP-003"],
+        "rejected_map_ids": [],
+        "notes": "<optional compliance officer notes>"
+      }
+    }
+    This object is injected into the IT Dispatcher task as input.
+    It must be cryptographically logged as part of the audit trail.
+
+  agent: regulatory_analyst  # Placeholder agent — task is resolved by UI event
+  context:
+    - audit_action_points
+
+# -----------------------------------------------------------------------------
+
+execute_and_log:
+  description: >
+    Execute the approved MAPs by writing IT tickets and an immutable audit
+    trail to the SQLite database. This task is triggered only after receipt
+    of a valid human approval event from the HITL gate.
+
+    For each approved MAP in the approval event's approved_map_ids list:
+
+    STEP 1 — Write IT Ticket (table: it_tickets):
+      INSERT a row containing:
+        - ticket_id: UUID v4, generated fresh
+        - map_id: From approved MAP
+        - action_title: From approved MAP
+        - action_description: From approved MAP
+        - target_department: From approved MAP
+        - priority: From approved MAP
+        - deadline: From approved MAP
+        - success_criteria: From approved MAP
+        - status: "OPEN"
+        - created_at: Current UTC timestamp (ISO 8601)
+        - created_by: "SYSTEM/compliance_pipeline_v1"
+
+    STEP 2 — Write Audit Trail Entry (table: audit_trail):
+      INSERT an append-only row containing:
+        - audit_id: UUID v4, generated fresh
+        - ticket_id: Foreign key to the IT ticket above
+        - map_id: From approved MAP
+        - clause_id: From MAP explainability
+        - source_document: From MAP explainability
+        - source_page: From MAP explainability
+        - source_section: From MAP explainability
+        - verbatim_clause: From MAP explainability
+        - auditor_verdict: "APPROVE"
+        - auditor_confidence: Float from audit record
+        - approver_name: From approval event
+        - approver_role: From approval event
+        - approval_timestamp: From approval event
+        - execution_timestamp: Current UTC timestamp (ISO 8601)
+        - pipeline_version: "compliance_pipeline_v1"
+        - immutable_flag: 1  -- Never set to 0. Never UPDATE this row.
+
+    STEP 3 — Generate Audit Trail Report:
+      Produce a formatted plain-text report summarising all written records
+      for the compliance officer to download.
+
+    CRITICAL RULES:
+      - Never write a record for a MAP not in approved_map_ids.
+      - Never UPDATE or DELETE existing audit_trail rows.
+      - If a database write fails, log the error and raise an exception.
+        Do not silently continue to the next MAP.
+      - All timestamps must be UTC. No local timezone offsets.
+
+  expected_output: >
+    A valid JSON execution report:
+    {
+      "execution_report": {
+        "pipeline_run_id": "<UUID>",
+        "execution_timestamp": "<ISO 8601 UTC>",
+        "tickets_created": 2,
+        "audit_records_written": 2,
+        "failed_writes": [],
+        "ticket_ids": ["<uuid1>", "<uuid2>"],
+        "approver_name": "<string>",
+        "approval_timestamp": "<ISO 8601>",
+        "status": "COMPLETE"
+      }
+    }
+    Plus a separate plain-text audit_trail_report field suitable for
+    PDF export by the Streamlit dashboard.
+
+  agent: it_dispatcher
+  context:
+    - generate_action_points
+    - audit_action_points
+    - human_approval_gate
