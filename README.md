@@ -27,7 +27,7 @@ SuRaksha AI processes RBI circulars and other regulatory documents to:
 
 ## Tech Stack
 
-- **Python 3.13**
+- **Python 3.11+**
 - **CrewAI 1.14.4** - Multi-agent orchestration framework
 - **Google Gemini** - LLM for agent reasoning (via `gemini-flash-latest` model)
 - **ChromaDB** - Vector database for policy embeddings
@@ -65,24 +65,32 @@ suraksha_agentic_complianc/
 
 ### Prerequisites
 
-- Python 3.13+
+- Python 3.11+ (tested with 3.11.15)
 - Google Gemini API key
+- Homebrew (for Python installation on macOS)
 
 ### Installation
 
 1. Clone the repository
-2. Create virtual environment:
+
+2. Install Python 3.11 (if not already installed):
    ```bash
-   python3 -m venv .venv
+   brew install python@3.11
+   ```
+
+3. Create virtual environment:
+   ```bash
+   python3.11 -m venv .venv
    source .venv/bin/activate
    ```
 
-3. Install dependencies:
+4. Install dependencies:
    ```bash
    pip install -r requirements.txt
+   pip install "crewai[google-genai]"  # Required for Google Gemini provider
    ```
 
-4. Configure environment variables:
+5. Configure environment variables:
    ```bash
    echo "GEMINI_API_KEY=your_api_key_here" > .env
    ```

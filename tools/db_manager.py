@@ -1,7 +1,7 @@
 # Import sqlite3 and the CrewAI tool decorator.
 # Create a @tool named 'Create_Compliance_Ticket'.
 # It should take these string arguments: task, department, explainability_trigger, and confidence_score.
-# It connects to '../database/compliance_tickets.db', creates a table called 'tickets' if it doesn't exist,
+# It connects to the database, creates a table called 'tickets' if it doesn't exist,
 # and inserts the arguments into the table with a current timestamp.
 # Return a success message with the inserted task name.
 
@@ -13,9 +13,10 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from crewai.tools import tool
 
-
-DB_PATH = "compliance_tickets.db"
-TICKET_DB_PATH = "../database/compliance_tickets.db"
+# Get the absolute path to the database directory
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "database", "compliance_tickets.db")
+TICKET_DB_PATH = DB_PATH
 
 
 @tool

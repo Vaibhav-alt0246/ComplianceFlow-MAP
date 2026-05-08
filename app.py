@@ -144,22 +144,24 @@ if st.session_state.maps_data and not st.session_state.execution_complete:
             errors = []
 
             for map_item in st.session_state.maps_data:
-                verdict = map_item.get("verdict", "UNKNOWN")
-                map_id = map_item.get("map_id", "N/A")
+                verdict = map_item.get("verdict", "APPROVE")  # Default to APPROVE for human-approved MAPs
+                map_id = map_item.get("map_id", f"MAP-{tickets_created + 1}")
+                task_desc = map_item.get("action_title", f"Execute MAP {map_id}")
+                dept = map_item.get("target_department", "IT_SECURITY")
+                trigger = map_item.get("explainability_trigger", "Human-approved MAP")
+                confidence = str(map_item.get("confidence_score", 0.95))
 
-                # Only dispatch approved MAPs
-                if verdict == "APPROVE":
-                    try:
-                        # Call the database tool (access underlying function via .func)
-                        result = create_compliance_ticket.func(
-                            task=f"Execute MAP {map_id}",
-                            department="IT_SECURITY",  # Default department, can be customized
-                            explainability_trigger=f"Approved MAP {map_id} from regulatory compliance analysis",
-                            confidence_score=str(map_item.get("confidence_score", 0.95))
-                        )
-                        tickets_created += 1
-                    except Exception as e:
-                        errors.append(f"Failed to create ticket for {map_id}: {e}")
+                try:
+                    # Call the database tool (access underlying function via .func)
+                    result = create_compliance_ticket.func(
+                        task=task_desc,
+                        department=dept,
+                        explainability_trigger=trigger,
+                        confidence_score=confidence
+                    )
+                    tickets_created += 1
+                except Exception as e:
+                    errors.append(f"Failed to create ticket for {map_id}: {e}")
 
             if errors:
                 st.warning(f"Created {tickets_created} tickets with {len(errors)} errors:")
