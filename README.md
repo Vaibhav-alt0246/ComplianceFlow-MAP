@@ -184,21 +184,6 @@ Define task execution flow with:
 - **Agent**: Assigned agent
 - **Context**: Task dependencies
 
-## Development
-
-### Testing Tools
-
-Test individual tools without CrewAI:
-```bash
-python test_tools.py
-```
-
-### List Available Gemini Models
-
-```bash
-python list_gemini_models.py
-```
-
 ## License
 
 MIT License
